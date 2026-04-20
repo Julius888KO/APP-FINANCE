@@ -4,16 +4,17 @@ Toutes les fonctions renvoient des structures propres et gèrent
 l'absence de données sans invention de valeurs.
 """
 
-from __future__ import annotations
+# Pas d'import "from __future__ import annotations" ici :
+# incompatible avec @dataclass sous Python 3.14 (utilisé par Streamlit Cloud).
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional, Union
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-import yfinance as yf  # noqa: E402
+import yfinance as yf
 
 from config import YTD_START, FULL_UNIVERSE, MARKET_INDICES, RATES_AND_VOL
 

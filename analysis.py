@@ -3,10 +3,11 @@ Analyse technique, fondamentale, scoring et recommandations.
 Aucune donnée n'est inventée : tout est dérivé des données disponibles.
 """
 
-from __future__ import annotations
+# Pas d'import "from __future__ import annotations" :
+# incompatible avec @dataclass sous Python 3.14.
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
