@@ -111,23 +111,26 @@ SCORE_AVOID_MAX = 40
 # Palette graphique — style sobre, premium, lisible
 # ---------------------------------------------------------------------------
 
+# Palette haute lisibilité — inspiration Bloomberg / Koyfin
 COLORS = {
-    "bg": "#0E1117",
-    "surface": "#161B22",
-    "border": "#262C36",
-    "text": "#E6EDF3",
-    "muted": "#8B949E",
-    "accent": "#4C9AFF",
-    "buy": "#2FB67C",
-    "watch": "#E0A83B",
-    "avoid": "#D86464",
-    "bull": "#2FB67C",
-    "bear": "#D86464",
-    "neutral": "#8B949E",
+    "bg": "#0A0E14",           # fond principal
+    "surface": "#141821",      # cartes
+    "surface_2": "#1C2230",    # cartes secondaires
+    "border": "#2A3142",
+    "text": "#F0F3F8",         # blanc doux haute lisibilité
+    "muted": "#B5C0D0",        # gris clair (jamais gris foncé)
+    "accent": "#5B9DFF",       # bleu principal
+    "buy": "#34D399",          # vert vif
+    "watch": "#FBBF24",        # ambre lumineux (pas marron)
+    "avoid": "#F87171",        # rouge vif
+    "bull": "#34D399",
+    "bear": "#F87171",
+    "neutral": "#B5C0D0",
 }
 
+# Badges : fond saturé + texte clair pour contraste maximal
 BADGE_STYLE = {
-    "ACHAT": {"bg": "#0F3D2E", "fg": "#2FB67C"},
-    "SURVEILLANCE": {"bg": "#3D2F0F", "fg": "#E0A83B"},
-    "ÉVITER": {"bg": "#3D1515", "fg": "#D86464"},
+    "ACHAT": {"bg": "#0F5D3E", "fg": "#FFFFFF"},
+    "SURVEILLANCE": {"bg": "#B8860B", "fg": "#FFFFFF"},
+    "ÉVITER": {"bg": "#B3261E", "fg": "#FFFFFF"},
 }

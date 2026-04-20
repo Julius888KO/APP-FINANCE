@@ -5,6 +5,8 @@ Lancement : streamlit run app.py
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -20,6 +22,8 @@ from config import (
 )
 from data import (
     CompanySnapshot,
+    detect_dividend_frequency,
+    dividend_trend,
     dividends_last_three_years,
     extract_fundamentals,
     fetch_company,
@@ -111,21 +115,26 @@ def sidebar_controls() -> dict:
             value=int(DEFAULT_DROP_THRESHOLD), step=5,
             help="Ne conserver que les sociétés en baisse d'au moins ce pourcentage depuis le 1er janvier 2026.",
         )
-        limit = st.slider(
-            "Nombre maximum de sociétés analysées",
-            min_value=5, max_value=40, value=20, step=5,
-            help="Les sociétés les plus liquides sont priorisées.",
+        limit_choice = st.select_slider(
+            "Taille de l'analyse",
+            options=["25", "50", "100", "200", "Tous"],
+            value="Tous",
+            help="Toutes les sociétés correspondant au critère sont analysées par défaut. "
+                 "Réduire uniquement pour accélérer le premier chargement.",
         )
-        st.markdown("---")
-        st.caption(
-            f"Date de référence : **{YTD_START.strftime('%d/%m/%Y')}**.  "
-            f"Univers : **{len(FULL_UNIVERSE)}** sociétés."
-        )
+        limit = None if limit_choice == "Tous" else int(limit_choice)
     universe = FULL_UNIVERSE
     if zone == "États-Unis":
         universe = US_TICKERS
     elif zone == "Europe":
         universe = EU_TICKERS
+    with st.sidebar:
+        st.markdown("---")
+        st.caption(
+            f"Date de référence : **{YTD_START.strftime('%d/%m/%Y')}**.  \n"
+            f"Univers de référence : **{len(universe)}** sociétés.  \n"
+            f"Mode d'analyse : **{limit_choice}**."
+        )
     return {"threshold": float(threshold), "universe": universe, "limit": limit}
 
 
@@ -365,26 +374,54 @@ def render_company_card(analysis: dict):
         with a3:
             st.markdown('<div class="rf-section-title">Dividende</div>', unsafe_allow_html=True)
             y = f.get("rendement_div")
-            if y and y > 0:
+            hist = dividends_last_three_years(snap)
+            freq = detect_dividend_frequency(snap)
+            trend = dividend_trend(snap)
+            pays_div = (y is not None and y > 0) or not hist.empty
+
+            if pays_div:
+                yield_txt = f"{y * 100:.2f} %" if y and y > 0 else "Donnée non disponible"
+                payout_val = f.get("payout")
+                payout_txt = f"{payout_val * 100:.1f} %" if payout_val else "Donnée non disponible"
+                div_amt = f.get("div_par_action")
+                div_amt_txt = f"{div_amt:.2f} {dev}" if div_amt else "Donnée non disponible"
+
                 st.markdown(
-                    f"**Versé :** oui  \n"
-                    f"**Rendement :** {y * 100:.2f}%  \n"
-                    f"**Taux de distribution :** {fmt_pct(f.get('payout'))}  \n"
-                    f"**Montant annuel :** {fmt_num(f.get('div_par_action'))} {dev}"
+                    f"**Verse un dividende :** Oui  \n"
+                    f"**Rendement :** {yield_txt}  \n"
+                    f"**Fréquence :** {freq}  \n"
+                    f"**Tendance :** {trend}  \n"
+                    f"**Montant annuel :** {div_amt_txt}  \n"
+                    f"**Taux de distribution :** {payout_txt}"
                 )
-                hist = dividends_last_three_years(snap)
+
                 if not hist.empty:
-                    st.dataframe(hist, hide_index=True, use_container_width=True)
-                # Jugement soutenabilité
+                    st.markdown(
+                        '<div class="rf-section-title" style="margin-top:10px">Historique (3 ans)</div>',
+                        unsafe_allow_html=True,
+                    )
+                    hist_display = hist.copy()
+                    hist_display["Dividende total"] = hist_display["Dividende total"].map(
+                        lambda v: f"{v:.2f} {dev}"
+                    )
+                    st.dataframe(hist_display, hide_index=True, use_container_width=True,
+                                 height=min(180, 52 + 36 * len(hist_display)))
+                else:
+                    st.info("Historique des dividendes : Donnée non disponible.")
+
+                # Évaluation de la soutenabilité
                 payout = f.get("payout") or 0
                 if payout and payout > 0.9:
-                    st.warning("Soutenabilité fragile : ratio de distribution élevé.")
-                elif y > 0.08:
-                    st.warning("Rendement très élevé : prudence, risque de coupe possible.")
+                    st.warning("Soutenabilité fragile : ratio de distribution très élevé.")
+                elif y and y > 0.08:
+                    st.warning("Rendement très élevé : vigilance sur un possible ajustement.")
+                elif payout and payout < 0.6 and trend in ("En croissance", "Stable"):
+                    st.success("Dividende apparaissant bien couvert et durable.")
                 else:
-                    st.caption("Dividende apparaissant soutenable au vu des ratios actuels.")
+                    st.caption("Soutenabilité standard : à confirmer avec les prochains résultats.")
             else:
-                st.caption("Société ne versant pas de dividende significatif.")
+                st.markdown("**Verse un dividende :** Non")
+                st.caption("Société ne distribuant pas de dividende actuellement.")
 
         st.markdown("<hr class='rf-divider'>", unsafe_allow_html=True)
 
@@ -468,46 +505,60 @@ def render_company_card(analysis: dict):
 # Construction du panel complet et du tableau principal
 # ---------------------------------------------------------------------------
 
-def build_panel(threshold: float, universe: list, limit: int) -> pd.DataFrame:
+def build_panel(threshold: float, universe: list, limit: int | None) -> pd.DataFrame:
     """Construit le panel complet des sociétés analysées.
 
     Non caché : utilise les fonctions cachées sous-jacentes (screen + fetch_company).
-    Affiche une barre de progression à l'utilisateur.
+    Si `limit` est None, toutes les sociétés en baisse sont analysées.
     """
     screen = screen_decliners(threshold, list(universe))
     if screen.empty:
         return screen
-    screen = screen.head(limit)
+    if limit is not None:
+        screen = screen.head(limit)
 
     rows = []
-    progress = st.progress(0.0, text="Analyse des sociétés…")
-    for i, row in screen.iterrows():
+    total = len(screen)
+    progress = st.progress(
+        0.0,
+        text=f"Analyse de {total} sociétés — premier chargement ~1-2 min, puis instantané (cache)…",
+    )
+
+    def _process(row):
         tk = row["ticker"]
-        try:
-            analysis = analyze_company(tk, float(row["ytd_perf"]))
-            f = analysis["fund"]
-            s = analysis["score"]
-            rows.append({
-                "Ticker": tk,
-                "Société": f["nom"],
-                "Secteur": f["secteur"],
-                "Pays": f["pays"],
-                "YTD %": row["ytd_perf"],
-                "Prix": f.get("prix") or row["last_price"],
-                "Capi.": fmt_large(f.get("market_cap")),
-                "Dividende": f.get("rendement_div"),
-                "Score": s.total,
-                "Risque": s.risk_level,
-                "Conviction": s.conviction,
-                "Profil": s.profile,
-                "Recommandation": s.recommendation,
-            })
-        except Exception:
-            continue
-        progress.progress(
-            min((i + 1) / max(len(screen), 1), 1.0),
-            text=f"Analyse en cours… ({i + 1}/{len(screen)})",
-        )
+        analysis = analyze_company(tk, float(row["ytd_perf"]))
+        f = analysis["fund"]
+        s = analysis["score"]
+        return {
+            "Ticker": tk,
+            "Société": f["nom"],
+            "Secteur": f["secteur"],
+            "Pays": f["pays"],
+            "YTD %": row["ytd_perf"],
+            "Prix": f.get("prix") or row["last_price"],
+            "Capi.": fmt_large(f.get("market_cap")),
+            "Dividende": f.get("rendement_div"),
+            "Score": s.total,
+            "Risque": s.risk_level,
+            "Conviction": s.conviction,
+            "Profil": s.profile,
+            "Recommandation": s.recommendation,
+        }
+
+    # Parallélisation I/O bound (yfinance) avec un pool modéré pour éviter le rate-limit
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(_process, row): row for _, row in screen.iterrows()}
+        done = 0
+        for future in as_completed(futures):
+            try:
+                rows.append(future.result())
+            except Exception:
+                pass
+            done += 1
+            progress.progress(
+                min(done / max(total, 1), 1.0),
+                text=f"Analyse en cours — {done}/{total} sociétés traitées",
+            )
     progress.empty()
     if not rows:
         return pd.DataFrame()

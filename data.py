@@ -13,7 +13,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import streamlit as st
-import yfinance as yf
+import yfinance as yf  # noqa: E402
 
 from config import YTD_START, FULL_UNIVERSE, MARKET_INDICES, RATES_AND_VOL
 
@@ -265,6 +265,53 @@ def dividends_last_three_years(snap: CompanySnapshot) -> pd.DataFrame:
     s = snap.dividends
     if s is None or s.empty:
         return pd.DataFrame()
-    yearly = s.groupby(s.index.year).sum()
-    yearly = yearly.sort_index().tail(4)  # on prend 4 pour comparer la tendance
-    return pd.DataFrame({"Année": yearly.index, "Dividende total": yearly.values})
+    current_year = datetime.now().year
+    yearly = s.groupby(s.index.year).sum().sort_index()
+    # Années complètes uniquement, puis les 3 plus récentes
+    complete = yearly[yearly.index < current_year].tail(3)
+    if complete.empty:
+        return pd.DataFrame()
+    return pd.DataFrame({
+        "Année": [int(y) for y in complete.index],
+        "Dividende total": [float(v) for v in complete.values],
+    })
+
+
+def detect_dividend_frequency(snap: CompanySnapshot) -> str:
+    """Détermine la fréquence de distribution à partir des intervalles observés."""
+    s = snap.dividends
+    if s is None or s.empty or len(s) < 2:
+        return "Donnée non disponible"
+    try:
+        recent = s.sort_index().tail(12).index
+        deltas = np.diff(recent.astype("int64")) / (24 * 3600 * 1e9)  # en jours
+        if len(deltas) == 0:
+            return "Donnée non disponible"
+        median = float(np.median(deltas))
+    except Exception:
+        return "Donnée non disponible"
+    if median < 45:
+        return "Mensuelle"
+    if median < 130:
+        return "Trimestrielle"
+    if median < 250:
+        return "Semestrielle"
+    return "Annuelle"
+
+
+def dividend_trend(snap: CompanySnapshot) -> str:
+    """Détermine la tendance du dividende : croissant / stable / déclinant / suspendu."""
+    hist = dividends_last_three_years(snap)
+    if hist.empty or len(hist) < 2:
+        return "Donnée non disponible"
+    vals = hist["Dividende total"].values
+    if vals[-1] == 0:
+        return "Suspendu"
+    diffs = np.diff(vals)
+    if np.all(diffs > 0):
+        return "En croissance"
+    if np.all(diffs < 0):
+        return "En baisse"
+    if abs(vals[-1] - vals[0]) / max(vals[0], 1e-9) < 0.05:
+        return "Stable"
+    return "Irrégulier"
