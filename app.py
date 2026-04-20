@@ -118,9 +118,9 @@ def sidebar_controls() -> dict:
         limit_choice = st.select_slider(
             "Taille de l'analyse",
             options=["25", "50", "100", "200", "Tous"],
-            value="50",
-            help="Défaut à 50 pour un premier chargement rapide. "
-                 "Passer à « Tous » après le premier chargement (données en cache).",
+            value="25",
+            help="Défaut à 25 pour un premier chargement rapide. "
+                 "Augmenter ensuite (les données sont mises en cache).",
         )
         limit = None if limit_choice == "Tous" else int(limit_choice)
     universe = FULL_UNIVERSE
@@ -545,13 +545,14 @@ def build_panel(threshold: float, universe: list, limit: int | None) -> pd.DataF
             "Recommandation": s.recommendation,
         }
 
-    # Parallélisation I/O bound (yfinance) avec un pool modéré pour éviter le rate-limit
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    # Parallélisation modérée (3 workers) pour équilibrer rapidité et stabilité
+    # sur plans d'hébergement contraints (Streamlit Cloud free tier).
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(_process, row): row for _, row in screen.iterrows()}
         done = 0
         for future in as_completed(futures):
             try:
-                rows.append(future.result())
+                rows.append(future.result(timeout=30))
             except Exception:
                 pass
             done += 1
