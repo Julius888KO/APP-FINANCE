@@ -279,9 +279,7 @@ def render_company_card(analysis: dict):
     ytd = analysis["ytd"]
     dev = f.get("devise") or ""
 
-    with st.container():
-        st.markdown('<div class="rf-card">', unsafe_allow_html=True)
-
+    with st.container(border=True):
         # Entête
         c1, c2 = st.columns([5, 2])
         with c1:
@@ -498,7 +496,6 @@ def render_company_card(analysis: dict):
             f"**Recommandation :** {reco_badge(score.recommendation)} &nbsp; {score.justification}",
             unsafe_allow_html=True,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -714,7 +711,7 @@ def main():
                     "ACHAT / SURVEILLANCE / ÉVITER",
                 ),
             ])
-            st.markdown("<br>", unsafe_allow_html=True)
+            st.write("")
 
             # Filtres sur le tableau
             c1, c2, c3 = st.columns(3)
