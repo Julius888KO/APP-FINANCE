@@ -118,9 +118,9 @@ def sidebar_controls() -> dict:
         limit_choice = st.select_slider(
             "Taille de l'analyse",
             options=["25", "50", "100", "200", "Tous"],
-            value="Tous",
-            help="Toutes les sociétés correspondant au critère sont analysées par défaut. "
-                 "Réduire uniquement pour accélérer le premier chargement.",
+            value="50",
+            help="Défaut à 50 pour un premier chargement rapide. "
+                 "Passer à « Tous » après le premier chargement (données en cache).",
         )
         limit = None if limit_choice == "Tous" else int(limit_choice)
     universe = FULL_UNIVERSE
